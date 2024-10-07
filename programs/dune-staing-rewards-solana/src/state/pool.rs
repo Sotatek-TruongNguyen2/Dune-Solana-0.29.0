@@ -23,13 +23,13 @@ pub struct DunePool {
 
     // == Staking details == //
     pub reward_per_block: u128,     // 16
-    pub total_stake: u128,          // 16
+    pub total_stake: u64,           // 8
     pub acc_reward_per_share: u128, // 16
     pub last_updated: u64,          // 8
 }
 
 impl DunePool {
-    pub const LEN: usize = 8 + 32 + 1 + 32 * 4 + 1 + 16 + 16 + 16 + 8;
+    pub const LEN: usize = 8 + 32 + 1 + 32 * 4 + 1 + 16 + 8 + 16 + 8;
 
     #[allow(clippy::too_many_arguments)]
     pub fn initialize(
@@ -56,7 +56,7 @@ impl DunePool {
         Ok(())
     }
 
-    pub fn update_total_stake(&mut self, deposit_amount: u128) -> Result<()> {
+    pub fn update_total_stake(&mut self, deposit_amount: u64) -> Result<()> {
         self.total_stake += deposit_amount;
         Ok(())
     }
@@ -72,7 +72,7 @@ impl DunePool {
 
         let total_spawning_rewards = self.spawning_rewards(self.last_updated, current_block)?;
 
-        self.acc_reward_per_share += total_spawning_rewards * WAD / self.total_stake;
+        self.acc_reward_per_share += total_spawning_rewards * WAD / self.total_stake as u128;
         self.last_updated = current_block;
 
         Ok(())

@@ -17,6 +17,9 @@ pub mod instructions;
 #[doc(hidden)]
 pub mod utils;
 
+#[doc(hidden)]
+pub mod events;
+
 use instructions::*;
 use utils::*;
 
@@ -28,9 +31,9 @@ pub mod dune_staing_rewards_solana {
         add_pool::handler(ctx)
     }
 
-    pub fn stake(
-        ctx: Context<Stake>,
-        amount: u128,
+    pub fn stake<'info>(
+        ctx: Context<'_, '_, '_, 'info, Stake<'info>>,
+        amount: u64,
         remaining_accounts_info: Option<RemainingAccountsInfo>,
     ) -> Result<()> {
         stake::handler(ctx, amount, remaining_accounts_info)

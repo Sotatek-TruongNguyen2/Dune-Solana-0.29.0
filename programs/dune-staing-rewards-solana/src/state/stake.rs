@@ -1,10 +1,5 @@
+use crate::{constants::WAD, errors::ErrorCode};
 use anchor_lang::prelude::*;
-
-use crate::{
-    constants::WAD,
-    errors::ErrorCode,
-    utils::{transfer_from_vault_to_owner, v2::token::transfer_from_owner_to_vault_v2},
-};
 
 use super::DunePool;
 
@@ -17,18 +12,17 @@ pub struct DuneUserInfo {
     pub dunepool: Pubkey, //32
 
     pub total_claimed: u128, // 16
-    pub total_stake: u128,   // 16
+    pub total_stake: u64,    // 8
     pub last_updated: u64,   // 8
 
-    pub reward_debt: u128,  // 16
-    pub total_earned: u128, // 16
+    pub reward_debt: u64, // 16
 
     pub blacklisted: bool,    // 1
     pub is_initialized: bool, // 1
 }
 
 impl DuneUserInfo {
-    pub const LEN: usize = 8 + 32 + 1 + 32 + 16 + 16 + 8 + 16 + 16 + 1 + 1;
+    pub const LEN: usize = 8 + 32 + 1 + 32 + 16 + 8 + 8 + 16 + 1 + 1;
 
     #[allow(clippy::too_many_arguments)]
     pub fn initialize(
@@ -50,38 +44,48 @@ impl DuneUserInfo {
         Err(ErrorCode::AccountIsInitialized.into())
     }
 
-    pub fn deposit(&mut self, dunepool: &mut Account<DunePool>, amount: u128) -> Result<()> {
-        self.enforce_initialized();
+    pub fn deposit(&mut self, dunepool: &mut Account<DunePool>, amount: u64) -> Result<u64> {
+        self.enforce_initialized()?;
 
         if amount == 0 {
             return Err(ErrorCode::InvalidDepositAmount.into());
         }
 
         // We need to update the pool before doing anything further
-        dunepool.update();
+        dunepool.update()?;
+
+        let mut pending_reward = 0;
 
         if self.total_stake > 0 {
-            let pending = self.total_stake * dunepool.acc_reward_per_share / WAD - self.reward_debt;
-            self.total_earned += pending;
+            // There're some rewards needs to be paid in here
+            pending_reward = (self.total_stake as u128 * dunepool.acc_reward_per_share / WAD)
+                as u64
+                - self.reward_debt;
         }
 
-        dunepool.update_total_stake(amount);
-
-        let clock = Clock::get()?;
-        let current_block = clock.slot;
+        // Update total stake amount for the pool
+        dunepool.update_total_stake(amount)?;
 
         self.total_stake += amount;
+        self.update_user_info(dunepool)?;
 
-        self.reward_debt = self.total_stake * dunepool.acc_reward_per_share / WAD;
-        self.last_updated = current_block;
-
-        Ok(())
+        Ok(pending_reward)
     }
 
     fn enforce_initialized(&self) -> Result<()> {
         if !self.is_initialized {
             return Err(ErrorCode::AccountIsInitialized.into());
         }
+
+        Ok(())
+    }
+
+    fn update_user_info(&mut self, dunepool: &Account<DunePool>) -> Result<()> {
+        let clock = Clock::get()?;
+        let current_block = clock.slot;
+
+        self.reward_debt = (self.total_stake as u128 * dunepool.acc_reward_per_share / WAD) as u64;
+        self.last_updated = current_block;
 
         Ok(())
     }

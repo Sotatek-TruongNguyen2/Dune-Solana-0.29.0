@@ -1,5 +1,8 @@
 use crate::{
-    constants::pda_seed::USER_DUNE_INFO_SEED,
+    calculate_transfer_fee_excluded_amount,
+    constants::{pda_seed::USER_DUNE_INFO_SEED, transfer_memo},
+    events::DepositEvent,
+    transfer_from_owner_to_vault_v2, transfer_from_vault_to_owner_v2,
     utils::remaining_accounts_utils::{
         parse_remaining_accounts, AccountsType, RemainingAccountsInfo,
     },
@@ -34,15 +37,25 @@ pub struct Stake<'info> {
       space = DuneUserInfo::LEN)
     ]
     pub user_info: Box<Account<'info, DuneUserInfo>>,
-    //
-    //#[account(
-    //  init,
-    //  payer = token_authority,
-    //  token::mint = deposit_token_mint,
-    //  token::token_program = token_program_a,
-    //  token::authority = token_authority
-    //)]
-    //pub user_token_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    #[account(
+      init,
+      payer = token_authority,
+      token::mint = deposit_token_mint,
+      token::token_program = token_program_a,
+      token::authority = token_authority
+    )]
+    pub user_token_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    #[account(
+      init,
+      payer = token_authority,
+      token::mint = reward_token_mint,
+      token::token_program = token_program_b,
+      token::authority = token_authority
+    )]
+    pub reward_user_token_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+
     #[account(address = dunepool.deposit_token_vault)]
     pub deposit_token_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
@@ -64,19 +77,29 @@ pub struct Stake<'info> {
     // - accounts for transfer hook program of token_mint_b
 }
 
-pub fn handler(
-    ctx: Context<Stake>,
-    amount: u128,
+pub fn handler<'info>(
+    ctx: Context<'_, '_, '_, 'info, Stake<'info>>,
+    amount: u64,
     remaining_accounts_info: Option<RemainingAccountsInfo>,
 ) -> Result<()> {
     let user_info = &mut ctx.accounts.user_info;
     let dunepool = &mut ctx.accounts.dunepool;
     let token_authority = &mut ctx.accounts.token_authority;
+    let reward_token_mint = &mut ctx.accounts.reward_token_mint;
+    let deposit_token_mint = &mut ctx.accounts.deposit_token_mint;
+    let user_token_vault = &mut ctx.accounts.user_token_vault;
+    let reward_token_vault = &mut ctx.accounts.reward_token_vault;
+    let reward_user_token_vault = &mut ctx.accounts.reward_user_token_vault;
+    let memo_program = &mut ctx.accounts.memo_program;
 
     if !user_info.is_initialized {
         let bump = ctx.bumps.user_info;
         user_info.initialize(&dunepool, bump, token_authority.key())?;
     }
+
+    let deposit_amount = calculate_transfer_fee_excluded_amount(deposit_token_mint, amount)?;
+
+    let earned_rewards = user_info.deposit(dunepool, deposit_amount.amount)?;
 
     // Process remaining accounts
     let remaining_accounts = parse_remaining_accounts(
@@ -85,13 +108,36 @@ pub fn handler(
         &[AccountsType::TransferHookA, AccountsType::TransferHookB],
     )?;
 
-    //transfer_from_owner_to_vault_v2(
-    //    authority,
-    //    token_owner_account,
-    //    token_vault,
-    //    token_program,
-    //    amount,
-    //);
-    //
-    Ok(user_info.deposit(dunepool, amount)?)
+    transfer_from_owner_to_vault_v2(
+        token_authority,
+        deposit_token_mint,
+        user_token_vault,
+        reward_token_vault,
+        &ctx.accounts.token_program_a,
+        memo_program,
+        &remaining_accounts.transfer_hook_input,
+        deposit_amount.amount,
+    )?;
+
+    transfer_from_vault_to_owner_v2(
+        dunepool,
+        reward_token_mint,
+        reward_token_vault,
+        reward_user_token_vault,
+        &ctx.accounts.token_program_b,
+        memo_program,
+        &remaining_accounts.transfer_hook_output,
+        earned_rewards,
+        transfer_memo::TRANSFER_MEMO_DEPOSIT.as_bytes(),
+    )?;
+
+    emit!(DepositEvent {
+        pool_id: dunepool.key(),
+        user: user_info.authority,
+        earned_rewards,
+        deposit_amount: deposit_amount.amount,
+        total_stake: user_info.total_stake
+    });
+
+    Ok(())
 }
