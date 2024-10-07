@@ -119,17 +119,19 @@ pub fn handler<'info>(
         deposit_amount.amount,
     )?;
 
-    transfer_from_vault_to_owner_v2(
-        dunepool,
-        reward_token_mint,
-        reward_token_vault,
-        reward_user_token_vault,
-        &ctx.accounts.token_program_b,
-        memo_program,
-        &remaining_accounts.transfer_hook_output,
-        earned_rewards,
-        transfer_memo::TRANSFER_MEMO_DEPOSIT.as_bytes(),
-    )?;
+    if earned_rewards > 0 {
+        transfer_from_vault_to_owner_v2(
+            dunepool,
+            reward_token_mint,
+            reward_token_vault,
+            reward_user_token_vault,
+            &ctx.accounts.token_program_b,
+            memo_program,
+            &remaining_accounts.transfer_hook_output,
+            earned_rewards,
+            transfer_memo::TRANSFER_MEMO_DEPOSIT.as_bytes(),
+        )?;
+    }
 
     emit!(DepositEvent {
         pool_id: dunepool.key(),
