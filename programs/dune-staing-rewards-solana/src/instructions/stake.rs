@@ -27,7 +27,7 @@ pub struct Stake<'info> {
     #[account(mut)]
     pub dunepool: Box<Account<'info, DunePool>>,
 
-    #[account(init,
+    #[account(init_if_needed,
       seeds = [
         USER_DUNE_INFO_SEED,
         dunepool.key().as_ref(),
@@ -39,7 +39,7 @@ pub struct Stake<'info> {
     pub user_info: Box<Account<'info, DuneUserInfo>>,
 
     #[account(
-      init,
+      init_if_needed,
       payer = token_authority,
       token::mint = deposit_token_mint,
       token::token_program = token_program_a,
@@ -48,7 +48,7 @@ pub struct Stake<'info> {
     pub user_token_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(
-      init,
+      init_if_needed,
       payer = token_authority,
       token::mint = reward_token_mint,
       token::token_program = token_program_b,

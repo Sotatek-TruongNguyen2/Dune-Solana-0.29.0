@@ -8,9 +8,7 @@ pub struct DepositEvent {
     pub pool_id: Pubkey,
     #[index]
     pub user: Pubkey,
-
     pub earned_rewards: u64,
     pub deposit_amount: u64,
-
     pub total_stake: u64,
 }
